@@ -34,9 +34,6 @@
     <ClCompile Include="Lang.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Sample.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="WindowInit.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -67,12 +64,6 @@
     <ClCompile Include="Control.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="CheckEscKey.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Action.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AutomationConfig.h">
@@ -88,9 +79,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Lang.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Sample.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="WindowInit.h">
@@ -118,12 +106,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Control.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="CheckEscKey.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Action.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

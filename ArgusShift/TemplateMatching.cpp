@@ -141,3 +141,32 @@ cv::Mat TemplateMatching::loadResourceData(int resourceId) {
 
     return image;
 }
+
+bool TemplateMatching::saveImage(const std::wstring& path, int w, int h, const uint32_t* bgrx) {
+    if (w <= 0 || h <= 0 || !bgrx) return false;
+    // Same conversion as captureScreen (BGRA -> BGR), so the template matches what match() sees
+    cv::Mat bgra(h, w, CV_8UC4, const_cast<uint32_t*>(bgrx));
+    cv::Mat bgr;
+    cv::cvtColor(bgra, bgr, cv::COLOR_BGRA2BGR);
+
+    size_t dot = path.find_last_of(L'.');
+    size_t sep = path.find_last_of(L"\\/");
+    std::string ext = ".png";
+    if (dot != std::wstring::npos && (sep == std::wstring::npos || dot > sep)) {
+        ext.clear();
+        for (wchar_t c : path.substr(dot)) ext += (char)towlower(c);
+    }
+    std::vector<uchar> buf;
+    try {
+        if (!cv::imencode(ext, bgr, buf)) return false;
+    }
+    catch (const cv::Exception&) {
+        return false;
+    }
+    // cv::imwrite cannot open non-ASCII paths on Windows: write the encoded bytes ourselves
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path.c_str(), L"wb") != 0 || !f) return false;
+    bool ok = fwrite(buf.data(), 1, buf.size(), f) == buf.size();
+    ok = fclose(f) == 0 && ok;
+    return ok;
+}

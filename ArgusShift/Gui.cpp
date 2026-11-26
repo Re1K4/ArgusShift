@@ -5,11 +5,13 @@
 #include "Lang.h"
 #include "Logger.h"
 #include "ScreenPicker.h"
+#include "TemplateMatching.h"
 #include "WindowInit.h"
 
 #include <windows.h>
 #include <commctrl.h>
 #include <commdlg.h>
+#include <ctime>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -30,7 +32,7 @@ namespace {
     constexpr int HOTKEY_CANCEL = 3;       // Esc: cancel the pick
 
     enum Page { PAGE_EVENTS = 0, PAGE_TIMERS = 1, PAGE_STEPS = 2, PAGE_COUNT = 3 };
-    enum class PickTarget { None, Event, StepAction, TemplateRegion };
+    enum class PickTarget { None, Event, StepAction, TemplateRegion, TemplateImage };
 
     enum : int {
         ID_TARGET = 100, ID_POLL, ID_NEW, ID_OPEN, ID_SAVE, ID_SAVEAS, ID_RUN, ID_STOP, ID_STATUS, ID_TAB, ID_LOG, ID_LANG,
@@ -54,7 +56,7 @@ namespace {
         ST_NAME = 500, ST_COND, ST_NEGATE, ST_DEBUG, ST_EVENTS, ST_MATCH, ST_CTIMER, ST_TPATH,
         ST_RX, ST_RY, ST_RW, ST_RH, ST_THRESH, ST_ACTION, ST_TEXT, ST_AX, ST_AY, ST_MS, ST_ATIMER,
         ST_NTRUE, ST_NFALSE, ST_TIMEOUT, ST_NTIMEOUT,
-        ST_TBROWSE = 580, ST_APICK, ST_TEXTHINT, ST_MSHINT, ST_RPICK,
+        ST_TBROWSE = 580, ST_APICK, ST_TEXTHINT, ST_MSHINT, ST_RPICK, ST_TCAPTURE,
     };
 
     // ------------------------------------------------------------ localized text
@@ -216,6 +218,7 @@ namespace {
         void onPickHotkey(int id);
         void applyPickedPoint(PickTarget t, POINT pt, COLORREF c);
         void applyPickedRect(const RECT& rc);
+        void applyPickedImage(const RECT& rc, const std::vector<uint32_t>& pixels);
         void onTestEvent();
         void onBrowseTemplate();
         void onRun();
@@ -271,7 +274,7 @@ namespace {
         // Timer form
         HWND tmName{}, tmSec{};
         // Step form
-        HWND stName{}, stCond{}, stNegate{}, stDebug{}, stEvents{}, stMatch{}, stCTimer{}, stTPath{}, stTBrowse{};
+        HWND stName{}, stCond{}, stNegate{}, stDebug{}, stEvents{}, stMatch{}, stCTimer{}, stTPath{}, stTBrowse{}, stTCapture{};
         HWND stRX{}, stRY{}, stRW{}, stRH{}, stRPick{}, stThresh{}, stAction{}, stText{}, stTextHint{}, stAX{}, stAY{}, stAPick{};
         HWND stMs{}, stMsHint{}, stATimer{}, stNTrue{}, stNFalse{}, stTimeout{}, stNTimeout{};
 
@@ -586,9 +589,11 @@ namespace {
 
         label({ L"Cond. timer", L"条件タイマー" }, LX, 214, LW, P);     stCTimer = combo(ST_CTIMER, X, 214, 200, P);
 
-        label({ L"Template image", L"テンプレート画像" }, LX, 240, LW, P);  stTPath = edit(ST_TPATH, X, 240, 300, P);
-        stTBrowse = button({ L"Browse...", L"参照..." }, ST_TBROWSE, 930, 239, 80, 25, P);
+        label({ L"Template image", L"テンプレート画像" }, LX, 240, LW, P);  stTPath = edit(ST_TPATH, X, 240, 215, P);
+        stTBrowse = button({ L"Browse...", L"参照..." }, ST_TBROWSE, 845, 239, 75, 25, P);
         formCtrls[P].push_back(stTBrowse);
+        stTCapture = button({ L"Capture (F1)", L"画面から作成 (F1)" }, ST_TCAPTURE, 925, 239, 105, 25, P);
+        formCtrls[P].push_back(stTCapture);
 
         label({ L"Region X/Y/W/H", L"領域 X/Y/W/H" }, LX, 266, LW, P);
         stRX = edit(ST_RX, X, 266, 50, P);
@@ -865,7 +870,7 @@ namespace {
         EnableWindow(stMatch, ev);
         EnableWindow(stDebug, ev);
         EnableWindow(stCTimer, c == ConditionType::TimerElapsed);
-        for (HWND h : { stTPath, stTBrowse, stRX, stRY, stRW, stRH, stRPick, stThresh }) EnableWindow(h, tp);
+        for (HWND h : { stTPath, stTBrowse, stTCapture, stRX, stRY, stRW, stRH, stRPick, stThresh }) EnableWindow(h, tp);
 
         bool text = a == ActionType::KeyTap || a == ActionType::TypeText;
         bool xy = a == ActionType::MouseMove || a == ActionType::MouseMoveRel ||
@@ -979,6 +984,10 @@ namespace {
             setStatus({ L"Show the target, then F1: freeze & drag a region / Esc: cancel",
                 L"対象を表示して F1: 静止キャプチャしてドラッグで領域指定 / Esc: キャンセル" });
         }
+        else if (t == PickTarget::TemplateImage) {
+            setStatus({ L"Show the target, then F1: freeze & drag the template image / Esc: cancel",
+                L"対象を表示して F1: 静止キャプチャしてドラッグでテンプレート画像を切り出し / Esc: キャンセル" });
+        }
         else {
             setStatus({ L"Show the target, then F1: freeze & pick on capture / Esc: cancel",
                 L"対象を表示して F1: 静止キャプチャから取得 / Esc: キャンセル" });
@@ -1022,6 +1031,17 @@ namespace {
                 applyPickedRect(rc);
             }
         }
+        else if (t == PickTarget::TemplateImage) {
+            RECT rc{};
+            std::vector<uint32_t> pixels;
+            ok = ScreenPicker::pickImage(hwnd, rc, pixels, display);
+            if (ok) {
+                OffsetRect(&rc, -o.x, -o.y);
+                applyPickedImage(rc, pixels);
+                SetForegroundWindow(hwnd);
+                return;
+            }
+        }
         else {
             POINT pt{};
             COLORREF c = 0;
@@ -1063,6 +1083,64 @@ namespace {
         Logger::info("Picked region x" + std::to_string(rc.left) + " y" + std::to_string(rc.top) +
             " w" + std::to_string(w) + " h" + std::to_string(h));
         setStatus({ L"Region set", L"領域を設定しました" });
+    }
+
+    // Save the pixels cut out of the frozen capture as a template image and set it to the step
+    void App::applyPickedImage(const RECT& rc, const std::vector<uint32_t>& pixels) {
+        int w = rc.right - rc.left, h = rc.bottom - rc.top;
+
+        wchar_t file[MAX_PATH];
+        time_t now = time(nullptr);
+        tm lt{};
+        localtime_s(&lt, &now);
+        wcsftime(file, MAX_PATH, L"template_%Y%m%d_%H%M%S.png", &lt);
+
+        // Start in the folder of the current template, else next to the exe
+        std::wstring dir = exeDirectory();
+        std::wstring cur = getText(stTPath);
+        if (!cur.empty()) {
+            bool abs = (cur.size() >= 2 && cur[1] == L':') || cur[0] == L'\\' || cur[0] == L'/';
+            std::wstring full = abs ? cur : dir + L"\\" + cur;
+            size_t pos = full.find_last_of(L"\\/");
+            if (pos != std::wstring::npos) {
+                DWORD attr = GetFileAttributesW(full.substr(0, pos).c_str());
+                if (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY)) dir = full.substr(0, pos);
+            }
+        }
+
+        OPENFILENAMEW ofn{};
+        ofn.lStructSize = sizeof(ofn);
+        ofn.hwndOwner = hwnd;
+        ofn.lpstrFilter = Lang::tr(L"PNG image (*.png)\0*.png\0Bitmap (*.bmp)\0*.bmp\0",
+            L"PNG 画像 (*.png)\0*.png\0ビットマップ (*.bmp)\0*.bmp\0");
+        ofn.lpstrFile = file;
+        ofn.nMaxFile = MAX_PATH;
+        ofn.lpstrInitialDir = dir.c_str();
+        ofn.lpstrDefExt = L"png";
+        ofn.lpstrTitle = Lang::tr(L"Save template image", L"テンプレート画像の保存");
+        ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+        if (!GetSaveFileNameW(&ofn)) {
+            setStatus({ L"Template capture canceled", L"テンプレート画像の作成をキャンセルしました" });
+            return;
+        }
+
+        std::wstring path = file;
+        if (!TemplateMatching::saveImage(path, w, h, pixels.data())) {
+            MessageBoxW(hwnd, (std::wstring(Lang::tr(L"Could not save the image:\n", L"画像を保存できませんでした:\n")) + path).c_str(),
+                L"ArgusShift", MB_ICONERROR);
+            return;
+        }
+        Logger::info("Saved template " + toAnsi(path) + " (x" + std::to_string(rc.left) + " y" + std::to_string(rc.top) +
+            " w" + std::to_string(w) + " h" + std::to_string(h) + ")");
+
+        if (selected(PAGE_STEPS) >= 0) {
+            std::wstring base = exeDirectory() + L"\\";
+            if (path.size() > base.size() && _wcsnicmp(path.c_str(), base.c_str(), base.size()) == 0) {
+                path = path.substr(base.size());  // store relative to exe directory
+            }
+            SetWindowTextW(stTPath, path.c_str());
+        }
+        setStatus({ L"Template image saved", L"テンプレート画像を保存しました" });
     }
 
     void App::onTestEvent() {
@@ -1401,6 +1479,7 @@ namespace {
             case EV_PICK:   onPickStart(PickTarget::Event); return 0;
             case ST_APICK:  onPickStart(PickTarget::StepAction); return 0;
             case ST_RPICK:  onPickStart(PickTarget::TemplateRegion); return 0;
+            case ST_TCAPTURE: onPickStart(PickTarget::TemplateImage); return 0;
             case EV_TEST:   onTestEvent(); return 0;
             case ST_TBROWSE: onBrowseTemplate(); return 0;
             case ID_LANG:

@@ -1,5 +1,7 @@
 ﻿#pragma once
 #include <windows.h>
+#include <cstdint>
+#include <vector>
 
 // Screen picking tools used by the editor GUI.
 //
@@ -22,4 +24,8 @@ namespace ScreenPicker {
     // Freeze the whole (virtual) screen right now and let the user drag a rectangle on the capture.
     // `rc` is { left, top, right (exclusive), bottom (exclusive) }.
     bool pickRect(HWND owner, RECT& rc, Display display = {});
+
+    // Same as pickRect, and also returns the selected pixels as they were on the frozen capture:
+    // `pixels` is top-down 32bpp BGRX, (rc.right - rc.left) * (rc.bottom - rc.top) values.
+    bool pickImage(HWND owner, RECT& rc, std::vector<uint32_t>& pixels, Display display = {});
 }

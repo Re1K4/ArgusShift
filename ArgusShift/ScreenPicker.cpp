@@ -574,4 +574,19 @@ namespace ScreenPicker {
         rc = p.resultRect;
         return true;
     }
+
+    bool pickImage(HWND owner, RECT& rc, std::vector<uint32_t>& pixels, Display display) {
+        Picker p;
+        p.rectMode = true;
+        applyDisplay(p, display);
+        if (!runPicker(owner, p)) return false;
+        rc = p.resultRect;
+        int w = rc.right - rc.left, h = rc.bottom - rc.top;
+        pixels.resize((size_t)w * h);
+        for (int y = 0; y < h; ++y) {
+            const uint32_t* src = p.cap.bits + (size_t)(rc.top + y - p.cap.y0) * p.cap.w + (rc.left - p.cap.x0);
+            std::copy(src, src + w, pixels.begin() + (size_t)y * w);
+        }
+        return true;
+    }
 }

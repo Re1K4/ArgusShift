@@ -121,14 +121,11 @@
     <None Include="PropertySheet.props" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Action.cpp" />
     <ClCompile Include="AutomationConfig.cpp" />
     <ClCompile Include="AutomationRunner.cpp" />
     <ClCompile Include="Gui.cpp" />
     <ClCompile Include="ScreenPicker.cpp" />
     <ClCompile Include="Lang.cpp" />
-    <ClCompile Include="Sample.cpp" />
-    <ClCompile Include="CheckEscKey.cpp" />
     <ClCompile Include="Control.cpp" />
     <ClCompile Include="Emulate.cpp" />
     <ClCompile Include="Event.cpp" />
@@ -141,14 +138,11 @@
     <ClCompile Include="WindowInit.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Action.h" />
     <ClInclude Include="AutomationConfig.h" />
     <ClInclude Include="AutomationRunner.h" />
     <ClInclude Include="Gui.h" />
     <ClInclude Include="ScreenPicker.h" />
     <ClInclude Include="Lang.h" />
-    <ClInclude Include="Sample.h" />
-    <ClInclude Include="CheckEscKey.h" />
     <ClInclude Include="Control.h" />
     <ClInclude Include="Emulate.h" />
     <ClInclude Include="Event.h" />
