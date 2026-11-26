@@ -1,143 +1,98 @@
-# Name 
-ArgusShift
+# ArgusShift
 
-## Overview
-C++ template for GUI automation with OpenCV library. 
-It is very fast and can automate most operations.
+画面上のピクセルの色や画像（テンプレートマッチング）を認識し、キー入力やマウス操作を自動で行う Windows 向け GUI 自動化ツールです。
+コードを書かずに、エディタ画面で「条件」と「アクション」を組み合わせたステップを作るだけで自動化できます。
 
-## Usage
+## 動作環境
 
-### GUI (automation editor)
-Run `ArgusShift.exe` to open the editor. Automations are configured without writing code:
+- Windows 10 / 11（x64）
+- ビルドする場合: Visual Studio 2019 以降（C++ デスクトップ開発）、OpenCV 4.10（`opencv_world4100.dll` は exe と同じフォルダに配置）
 
-| Tab | Content | Limit |
+## 基本的な使い方
+
+1. `ArgusShift.exe` を起動します。
+2. 上部の **対象exe** に、操作したいアプリの実行ファイル名（例: `notepad.exe`）を入力します。
+3. **認識点** / **タイマー** タブで、判定に使う点やタイマーを用意します（必要な場合のみ）。
+4. **ステップ** タブで、自動化の手順を作ります。
+5. **実行** ボタンで開始します。止めるときは **ESC** キーか **停止** ボタンを押します。
+6. **保存** でプロジェクトを `*.argus` ファイルとして保存できます。
+
+`ArgusShift.exe <ファイル名.argus>` のように指定すると、プロジェクトを直接開けます（旧形式の `*.cppauto` も開けます）。
+
+## 画面の構成
+
+| タブ | 内容 | 上限 |
 |---|---|---|
-| Points (認識点) | Detection points = pixel checks `(x, y, color, fuzzy, colorType)` (the `Event` class). "Pick from screen" reads a position and color (see below); "Test now" logs the current result. | 32 |
-| Timers | Named timers with a duration in seconds. | 16 |
-| Steps | The automation itself. Each step = condition + action + transitions. | 64 |
+| 認識点 | 画面上の座標と色の組み合わせ。X / Y / RGB / 許容誤差 / 色の種別を設定します。 | 32 |
+| タイマー | 名前と秒数を持つタイマー。 | 16 |
+| ステップ | 自動化の本体。各ステップは「条件」「アクション」「次の遷移先」からなります。 | 64 |
 
-#### Picking from the screen
-"Pick from screen" (points), "Pick" (action X, Y) and "Drag..." (template region) start a pick.
-While it is pending, these keys work globally:
+画面上部では、**周期ms**（条件をチェックする間隔）、**座標** の基準、**ウィンドウ固定**（対象ウィンドウの位置とサイズを固定）を設定できます。
 
-| Key | Effect |
+## ステップの作り方
+
+ステップは上から順に、次のように実行されます。
+
+1. **条件** を *周期ms* ごとにチェックします。
+2. 条件が成り立つと **アクション** を実行し、**真の場合の次** へ進みます。
+3. 条件が成り立たないときは **偽の場合の次** へ進みます。`(留まる / 再試行)` を選ぶと同じステップでチェックを続けます。
+4. **タイムアウト (秒)** を 0 より大きくすると、条件が成り立たないまま指定秒数が経過したときに指定のステップへ移ります。
+
+遷移先には `(次のステップ)`、`(終了)`、`(留まる / 再試行)`、または任意のステップを指定できます。
+
+### 条件
+
+| 条件 | 内容 |
 |---|---|
-| **F1** | Freezes the whole screen at that moment and opens a full-screen picker on the capture. The capture is drawn 1:1 at its real screen position, so the picked coordinates are the real ones. Because the colors are those of the moment F1 was pressed, animated screens work too. |
-| **Esc** | Cancels (clicking the pick button again also cancels). |
+| 常に | 常に成り立ちます。 |
+| 認識点の色 | 認識点の色が許容誤差の範囲内で一致するか。複数選んだ場合は ALL（すべて一致）/ ANY（いずれか一致）を選べます。 |
+| 認識点RGB種別 | 認識点の色が指定の系統（RED / GREEN / BLUE など）か。 |
+| タイマー経過 | タイマーが設定秒数を経過したか。 |
+| テンプレート一致 | 指定領域内にテンプレート画像が見つかるか（しきい値で判定）。 |
+| テンプレート(二値) | 画像を二値化してからテンプレートマッチングします。 |
 
-In the frozen picker: a magnifier shows the pixels around the cursor with the selected pixel outlined,
-its coordinates and RGB; **arrow keys** move 1 px (**Shift**: 10 px); **Enter** / left click confirms;
-**Esc** / right click cancels. For a template region, drag a rectangle (or press **Enter** on two corners);
-X / Y / W / H are filled in.
+**否定** にチェックを入れると、条件の結果が反転します。
 
-Steps are executed as a state machine driven by a `Control` object (`Control::NOW` is the index of the running step):
+### アクション
 
-1. The step's **condition** is checked every *Poll ms*:
-   `Always`, `Point color` / `Point RGB type` (1 point -> `Event`, 2+ points -> `MultiEvent` with ALL/ANY),
-   `Timer elapsed`, `Template match` / `Template (binary)`. `Negate` inverts the result.
-2. When it is true, the **action** runs (`Key tap` e.g. `CTRL+S`, `Type text`, `Mouse move`, `Left/Right click`,
-   `Click match` (center of the last template match), `Wait`, `Timer start`, `Timer reset`)
-   and `Control::changeCtrl()` moves to **Next if true**.
-3. When it is false, **Next if false** is used (`(stay / retry)` keeps polling the same step).
-   With **Timeout (s)** > 0 the step moves to the timeout target when the condition stays false for that long.
-
-Transition targets: `(next step)`, `(end)`, `(stay / retry)` or a specific step.
-Add / Remove / Up / Down keep references between steps, points and timers consistent.
-Projects are saved as UTF-8 text files (`*.argus`; older `*.cppauto` files can still be opened). `ArgusShift.exe <file.argus>` opens a project directly.
-Press **ESC** (or the Stop button) to stop a running automation.
-
-The UI language can be switched between English and Japanese (日本語) with the language selector
-at the right end of the tab row. The choice is saved in `ArgusShift.ini` next to the exe; without it,
-the Windows display language is used.
-
-Coordinates are physical pixels. The **Coords** selector chooses how every coordinate (points,
-template regions, mouse positions) is interpreted:
-
-| Mode | Meaning |
+| アクション | 内容 |
 |---|---|
-| **Client** (default) | Offset from the top-left of the *Target exe* window's client area. The origin is re-read every poll, so the automation keeps working when the window is moved. Picks from the screen are stored relative to the window. If the window disappears or is minimized, the run waits for it. |
-| **Screen** | Absolute screen pixels. Before the run the window is brought to the front and moved to (0, 0) (unless *Fix window* is set). |
+| なし | 何もしません。 |
+| キー入力 | キーを押します。`CTRL+S` のように `+` でつなぐと同時押しになります。 |
+| 文字列入力 | 文字列を入力します。 |
+| マウス移動 / マウス移動(相対) | 指定座標へ（または現在位置から相対的に）マウスを動かします。 |
+| 左クリック / 右クリック | 指定座標をクリックします。 |
+| 一致位置をクリック | 直前のテンプレートマッチで見つかった位置の中心をクリックします。 |
+| 待機 | 指定ミリ秒待ちます。 |
+| タイマー開始 / タイマーリセット | タイマーを開始・リセットします。 |
 
-When the mode is switched, the existing coordinates can be converted using the window's current position.
-Project files saved before this setting existed open in **Screen** mode.
+## 画面から座標や色を取得する
 
-### Writing code (template)
-The classes below can still be used directly from C++. The original console sample lives in `Sample.cpp`
-and runs with `ArgusShift.exe --sample`.
-(!) Please launch notepad.exe before running the sample.
+認識点の **画面から取得**、アクションの **取得 (F1)**、テンプレート領域の **ドラッグ指定** ボタンを押すと取得待ちになります。
 
-### Definition and method calls
+1. 対象の画面を表示した状態で **F1** を押すと、その瞬間の画面が固定（キャプチャ）されます。
+2. 拡大鏡を見ながら位置を合わせ、**左クリック** または **Enter** で確定します。
+   - **矢印キー** で 1px、**Shift + 矢印キー** で 10px 移動します。
+   - テンプレート領域の場合は、矩形をドラッグして指定します。
+3. **Esc** または右クリックでキャンセルします。
 
-#### Logger
-```cpp
-Logger::initialize("", true);
-Logger::info("message");
-Logger::warning("message");
-Logger::error("message");
-```
-- `initialize(filename, consoleOutput)` initializes log output destination and console output settings.
-- `info / warning / error` writes logs at each level.
+画面を固定してから選ぶため、アニメーションしている画面でも正確に取得できます。
+認識点の **今すぐテスト** を押すと、現在の判定結果がログに出力されます。
 
-#### Timer
-```cpp
-Timer tm;
-tm.set();
-double elapsed = tm.distance();
-tm.reset();
-```
-- Create an instance and call `set()` to start measurement.
-- `distance()` returns elapsed time.
-- `reset()` resets the internal state.
+## 座標の基準
 
-#### Control
-```cpp
-Control control;
-int current = control.NOW;
-int previous = control.PREV;
-control.changeCtrl(10);
-```
-- `NOW` and `PREV` store current/previous control numbers.
-- Use `changeCtrl()` to update control state.
+| モード | 内容 |
+|---|---|
+| クライアント（既定） | 対象exeのウィンドウのクライアント領域左上からの位置。ウィンドウを移動しても動作し続けます。ウィンドウが閉じたり最小化されたりすると、戻るまで待機します。 |
+| 画面 | 画面全体の絶対座標。実行前に対象ウィンドウを前面に出し、(0, 0) に移動します（*ウィンドウ固定* 時を除く）。 |
 
-#### Event
-```cpp
-Event ev(28, 19, RGB(106, 167, 182), 0, "BLUE");
-bool colorMatched = ev.checkColor();
-bool rgbMatched = ev.checkRGB();
-```
-- Define with `(x, y, color, fazzy, colorType)`.
-- `checkColor()` checks exact-like color matching with `fazzy` tolerance.
-- `checkRGB()` checks by RGB category (`"RED"`, `"GREEN"`, `"BLUE"`).
+モードを切り替えるときに、現在のウィンドウ位置を使って既存の座標を変換できます。
 
-#### MultiEvent
-```cpp
-Event ev1(28, 19, RGB(106, 167, 182), 0, "BLUE");
-Event ev2(29, 13, RGB(104, 166, 181), 0, "BLUE");
-Event ev3(28, 20, RGB(118, 184, 199), 0, "BLUE");
+## 表示言語
 
-MultiEvent mev(ev1, ev2, ev3);
-bool allColor = mev.checkColorMulti(ALL_MATCH, true);
-bool anyRgb = mev.checkRGBMulti(ANY_MATCH, false);
-```
-- Pass two or more `Event` objects to the constructor.
-- `checkColorMulti(mode, debugFlag)` and `checkRGBMulti(mode, debugFlag)` support:
-  - `ALL_MATCH`: all events must match
-  - `ANY_MATCH`: at least one event must match
+タブ行の右端にある言語選択で、日本語と英語を切り替えられます。
+設定は exe と同じフォルダの `ArgusShift.ini` に保存されます。未設定の場合は Windows の表示言語に従います。
 
-#### TemplateMatching
-```cpp
-TemplateMatching tm("asset/images/notepad_icon.png");
-bool found = tm.match(cv::Rect(0, 0, 1920, 1080), 0.9);
-bool foundBinary = tm.matchBinary(cv::Rect(0, 0, 1920, 1080), 0.9);
-```
-- Create with template image path.
-- `match(region, fuzzy)` performs normal template matching.
-- `matchBinary(region, fuzzy)` performs binary-image-based matching.
-- Last result rectangle is stored in `lastMatchResult`.
+## ライセンス
 
-### How to call `WindowInit`
-```cpp
-WindowInit("notepad.exe");
-```
-- Pass the target application executable name as `const char*`.
-- Run this before event checks or mouse/keyboard automation so shared window information is initialized.
+[MIT License](LICENSE.txt)
