@@ -361,3 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# OpenCV prebuilt binaries (needed to link/run). Re-include despite the x64/ and [Bb]in/ rules above.
+# .lib/.dll are stored with Git LFS (see .gitattributes); PDBs and sample tools stay ignored.
+!ArgusShift/dependence/opencv/build/x64/
+!ArgusShift/dependence/opencv/build/x64/vc16/bin/
+ArgusShift/dependence/opencv/build/x64/vc16/bin/*.exe
