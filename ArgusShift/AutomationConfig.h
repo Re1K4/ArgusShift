@@ -63,6 +63,9 @@ namespace Automation {
         std::wstring colorType = L"RED";
     };
 
+    // True if the point's RGB has no hue (gray / white / black): 'Point color family' never matches it
+    bool isAchromatic(const EventConfig& e);
+
     struct TimerConfig {
         std::wstring name = L"Timer";
         double seconds = 1.0;

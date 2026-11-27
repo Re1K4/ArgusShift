@@ -1,5 +1,6 @@
 ﻿#include "AutomationConfig.h"
 #include "Lang.h"
+#include "Event.h"
 #include <windows.h>
 #include <algorithm>
 #include <fstream>
@@ -15,8 +16,8 @@ namespace Automation {
     const wchar_t* conditionName(ConditionType type) {
         switch (type) {
         case ConditionType::None:           return Lang::tr(L"Always", L"常に");
-        case ConditionType::EventColor:     return Lang::tr(L"Point color", L"認識点の色");
-        case ConditionType::EventRGB:       return Lang::tr(L"Point RGB type", L"認識点RGB種別");
+        case ConditionType::EventColor:     return Lang::tr(L"Point color (RGB match)", L"認識点の色 (RGB一致)");
+        case ConditionType::EventRGB:       return Lang::tr(L"Point color family", L"認識点の色系統");
         case ConditionType::TimerElapsed:   return Lang::tr(L"Timer elapsed", L"タイマー経過");
         case ConditionType::Template:       return Lang::tr(L"Template match", L"テンプレート一致");
         case ConditionType::TemplateBinary: return Lang::tr(L"Template (binary)", L"テンプレート(二値)");
@@ -248,6 +249,10 @@ namespace Automation {
 
     // ---------------------------------------------------------------- Validation
 
+    bool isAchromatic(const EventConfig& e) {
+        return Event::classifyColor(e.r & 0xFF, e.g & 0xFF, e.b & 0xFF) == nullptr;
+    }
+
     std::wstring validateProject(const Project& p) {
         std::wostringstream err;
         int nSteps = (int)p.steps.size();
@@ -280,8 +285,13 @@ namespace Automation {
             case ConditionType::EventColor:
             case ConditionType::EventRGB:
                 if (s.eventIds.empty()) stepPrefix(i) << Lang::tr(L"select at least one point.\n", L"認識点を1つ以上選択してください。\n");
-                for (int id : s.eventIds)
+                for (int id : s.eventIds) {
                     if (id < 0 || id >= nEvents) stepPrefix(i) << Lang::tr(L"invalid point index ", L"不正な認識点番号 ") << id << L".\n";
+                    else if (s.condition == ConditionType::EventRGB && isAchromatic(p.events[id]))
+                        stepPrefix(i) << Lang::tr(L"point ", L"認識点 ") << id << L" (" << p.events[id].name
+                            << Lang::tr(L") is achromatic and never matches 'Point color family'.\n",
+                                        L") は無彩色のため「認識点の色系統」では判定できません。\n");
+                }
                 break;
             case ConditionType::TimerElapsed:
                 if (s.conditionTimer < 0 || s.conditionTimer >= nTimers)

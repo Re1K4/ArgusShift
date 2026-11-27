@@ -209,6 +209,8 @@ namespace {
         void autoSetColorType();
         void updateColorTypeHint();
         void updateStepFieldStates();
+        void fillStepPoints(ConditionType cond, const std::vector<int>& selectedIds);
+        std::vector<int> selectedStepPoints() const;
         void fillNextCombo(HWND combo, int value);
         void fillTimerCombo(HWND combo, int value);
 
@@ -277,6 +279,7 @@ namespace {
         HWND tmName{}, tmSec{};
         // Step form
         HWND stName{}, stCond{}, stNegate{}, stDebug{}, stEvents{}, stMatch{}, stCTimer{}, stTPath{}, stTBrowse{}, stTCapture{};
+        std::vector<int> stPointRows;   // stEvents row -> point index
         HWND stRX{}, stRY{}, stRW{}, stRH{}, stRPick{}, stThresh{}, stAction{}, stText{}, stTextHint{}, stAX{}, stAY{}, stAPick{};
         HWND stMs{}, stMsHint{}, stATimer{}, stNTrue{}, stNFalse{}, stTimeout{}, stNTimeout{};
 
@@ -454,7 +457,7 @@ namespace {
         addColumn(PAGE_EVENTS, { L"Y", L"Y" }, 50);
         addColumn(PAGE_EVENTS, { L"RGB", L"RGB" }, 95);
         addColumn(PAGE_EVENTS, { L"Fuzzy", L"誤差" }, 45);
-        addColumn(PAGE_EVENTS, { L"Type", L"種別" }, 65);
+        addColumn(PAGE_EVENTS, { L"Family", L"色系統" }, 65);
 
         addColumn(PAGE_TIMERS, { L"#", L"#" }, 32);
         addColumn(PAGE_TIMERS, { L"Name", L"名前" }, 250);
@@ -536,8 +539,8 @@ namespace {
         evB = edit(EV_B, X + 120, 160, 55, P);
         label({ L"Fuzzy", L"許容誤差" }, LX, 186, LW, P);        evFuzzy = edit(EV_FUZZY, X, 186, 80, P);
         label({ L"tolerance per channel (0-255)", L"チャンネルごとの許容差 (0-255)" }, X + 90, 186, 250, P);
-        label({ L"Color type", L"色の種別" }, LX, 212, LW, P);   evType = combo(EV_TYPE, X, 212, 120, P);
-        evTypeHint = add(L"STATIC", L"", SS_LEFT, X + 130, 214, 275, 32, -1, P);   // 2 lines, set by updateColorTypeHint
+        label({ L"Color family", L"色系統" }, LX, 212, LW, P);   evType = combo(EV_TYPE, X, 212, 120, P);
+        evTypeHint = add(L"STATIC", L"", SS_LEFT, X + 130, 214, 275, 48, -1, P);   // HSV + status (up to 3 lines), set by updateColorTypeHint
         for (int i = 0; i < COLOR_TYPE_COUNT; ++i) SendMessageW(evType, CB_ADDSTRING, 0, (LPARAM)COLOR_TYPES[i]);
         label({ L"Color", L"色" }, LX, 244, LW, P);
         evPreview = add(L"STATIC", L"", WS_BORDER, X, 244, 80, 36, EV_PREVIEW, P);
@@ -546,14 +549,14 @@ namespace {
         const Text help{
             L"A detection point checks the pixel at (X, Y). Coordinates follow the 'Coords' setting: "
             L"Client = from the top-left of the target window's content, Screen = absolute.\r\n"
-            L"Use it from a step with the condition 'Point color' (color within Fuzzy) "
-            L"or 'Point RGB type' (hue category). Selecting 2 or more points in a step "
+            L"Use it from a step with the condition 'Point color (RGB match)' (color within Fuzzy) "
+            L"or 'Point color family' (hue category). Selecting 2 or more points in a step "
             L"uses ALL / ANY matching.\r\n"
             L"Pick from screen: F1 freezes the screen and opens the capture picker "
             L"(magnifier, arrow keys move 1 px, Enter / click to confirm).",
             L"認識点は座標 (X, Y) のピクセルを判定します。座標は「座標」設定に従います "
             L"(クライアント = 対象ウィンドウの表示領域の左上から / 画面 = 絶対座標)。\r\n"
-            L"ステップの条件「認識点の色」(許容誤差内の色) または「認識点RGB種別」(色相カテゴリ) で使用します。"
+            L"ステップの条件「認識点の色 (RGB一致)」(許容誤差内の色) または「認識点の色系統」(色相の系統) で使用します。"
             L"1つのステップで2つ以上の認識点を選択すると、ALL / ANY 判定を行います。\r\n"
             L"画面から取得: F1キーで画面を静止キャプチャして選択できます "
             L"(ルーペ表示、矢印キーで1ピクセル移動、Enter / クリックで確定)。" };
@@ -756,12 +759,7 @@ namespace {
             SendMessageW(stNegate, BM_SETCHECK, s.negate ? BST_CHECKED : BST_UNCHECKED, 0);
             SendMessageW(stDebug, BM_SETCHECK, s.debug ? BST_CHECKED : BST_UNCHECKED, 0);
 
-            SendMessageW(stEvents, LB_RESETCONTENT, 0, 0);
-            for (int i = 0; i < (int)project.events.size(); ++i) {
-                std::wstring t = std::to_wstring(i) + L": " + project.events[i].name;
-                SendMessageW(stEvents, LB_ADDSTRING, 0, (LPARAM)t.c_str());
-            }
-            for (int id : s.eventIds) SendMessageW(stEvents, LB_SETSEL, TRUE, id);
+            fillStepPoints(s.condition, s.eventIds);
             SendMessageW(stMatch, CB_SETCURSEL, s.matchAll ? 0 : 1, 0);
 
             fillTimerCombo(stCTimer, s.conditionTimer);
@@ -818,13 +816,7 @@ namespace {
             s.negate = SendMessageW(stNegate, BM_GETCHECK, 0, 0) == BST_CHECKED;
             s.debug = SendMessageW(stDebug, BM_GETCHECK, 0, 0) == BST_CHECKED;
 
-            s.eventIds.clear();
-            int selCount = (int)SendMessageW(stEvents, LB_GETSELCOUNT, 0, 0);
-            if (selCount > 0) {
-                std::vector<int> items(selCount);
-                SendMessageW(stEvents, LB_GETSELITEMS, selCount, (LPARAM)items.data());
-                s.eventIds = items;
-            }
+            s.eventIds = selectedStepPoints();
             s.matchAll = SendMessageW(stMatch, CB_GETCURSEL, 0, 0) != 1;
 
             int ct = (int)SendMessageW(stCTimer, CB_GETCURSEL, 0, 0);
@@ -874,18 +866,46 @@ namespace {
 
     void App::updateColorTypeHint() {
         if (selected(PAGE_EVENTS) < 0) { SetWindowTextW(evTypeHint, L""); return; }
-        const char* cat = Event::classifyColor(getInt(evR) & 0xFF, getInt(evG) & 0xFF, getInt(evB) & 0xFF);
+        int hue = 0, sat = 0, val = 0;
+        const char* cat = Event::classifyColor(getInt(evR) & 0xFF, getInt(evG) & 0xFF, getInt(evB) & 0xFF, &hue, &sat, &val);
         int sel = (int)SendMessageW(evType, CB_GETCURSEL, 0, 0);
-        std::wstring hint;
+        // Line 1: HSV of the RGB above (S / V matter for the achromatic cut: S <= 40% or V <= 10%)
+        std::wstring hint = L"H " + std::to_wstring(hue) + L"°  S " + std::to_wstring(sat * 100 / 255) +
+            L"%  V " + std::to_wstring(val * 100 / 255) + L"%\r\n";
         if (!cat)
-            hint = Lang::tr(L"Achromatic RGB: 'Point RGB type' ignores gray / white / black",
-                            L"無彩色のため「認識点RGB種別」では判定されません");
+            hint += Lang::tr(L"Achromatic RGB: 'Point color family' ignores gray / white / black",
+                            L"無彩色のため「認識点の色系統」では判定されません");
         else if (sel >= 0 && fromAnsi(cat) == COLOR_TYPES[sel])
-            hint = Lang::tr(L"Auto from RGB (used by 'Point RGB type')",
-                            L"RGBから自動設定 (「認識点RGB種別」で使用)");
+            hint += Lang::tr(L"Auto from RGB (used by 'Point color family')",
+                            L"RGBから自動設定 (「認識点の色系統」で使用)");
         else
-            hint = std::wstring(Lang::tr(L"Manual: the RGB above is ", L"手動指定: 上のRGBは ")) + fromAnsi(cat);
+            hint += std::wstring(Lang::tr(L"Manual: the RGB above is ", L"手動指定: 上のRGBは ")) + fromAnsi(cat);
         SetWindowTextW(evTypeHint, hint.c_str());
+    }
+
+    // Step point list. 'Point color family' cannot judge achromatic points, so they are not listed
+    // for it; stPointRows maps each list row to its point index.
+    void App::fillStepPoints(ConditionType cond, const std::vector<int>& selectedIds) {
+        SendMessageW(stEvents, LB_RESETCONTENT, 0, 0);
+        stPointRows.clear();
+        for (int i = 0; i < (int)project.events.size(); ++i) {
+            if (cond == ConditionType::EventRGB && isAchromatic(project.events[i])) continue;
+            std::wstring t = std::to_wstring(i) + L": " + project.events[i].name;
+            int row = (int)SendMessageW(stEvents, LB_ADDSTRING, 0, (LPARAM)t.c_str());
+            stPointRows.push_back(i);
+            if (std::find(selectedIds.begin(), selectedIds.end(), i) != selectedIds.end())
+                SendMessageW(stEvents, LB_SETSEL, TRUE, row);
+        }
+    }
+
+    std::vector<int> App::selectedStepPoints() const {
+        std::vector<int> ids;
+        int selCount = (int)SendMessageW(stEvents, LB_GETSELCOUNT, 0, 0);
+        if (selCount <= 0) return ids;
+        std::vector<int> rows(selCount);
+        SendMessageW(stEvents, LB_GETSELITEMS, selCount, (LPARAM)rows.data());
+        for (int r : rows) if (r >= 0 && r < (int)stPointRows.size()) ids.push_back(stPointRows[r]);
+        return ids;
     }
 
     // Enable only the fields that matter for the chosen condition / action
@@ -1570,6 +1590,8 @@ namespace {
             bool change = code == EN_CHANGE || code == CBN_SELCHANGE || code == BN_CLICKED || code == LBN_SELCHANGE;
             if (change && !loadingForm) {
                 if ((id == EV_R || id == EV_G || id == EV_B) && code == EN_CHANGE) autoSetColorType();
+                if (id == ST_COND && code == CBN_SELCHANGE)   // hide / show achromatic points, keeping the selection
+                    fillStepPoints((ConditionType)SendMessageW(stCond, CB_GETCURSEL, 0, 0), selectedStepPoints());
                 if (id >= EV_NAME && id < EV_PREVIEW) saveForm(PAGE_EVENTS);
                 else if (id >= TM_NAME && id < 500) saveForm(PAGE_TIMERS);
                 else if (id >= ST_NAME && id < ST_TBROWSE) saveForm(PAGE_STEPS);
