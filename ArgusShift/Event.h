@@ -21,6 +21,11 @@ public:
     // Check RGB Category
     bool checkRGB(bool debugFlag = false);
 
+    // Hue category ("RED", "ORANGE", ...) of an RGB color, or nullptr if it is achromatic
+    // (gray / white / black: never matched by checkRGB). Optionally returns H (0-360), S, V (0-255).
+    static const char* classifyColor(int red, int green, int blue,
+        int* hue = nullptr, int* saturation = nullptr, int* value = nullptr);
+
     int x, y;          // Pixel Coordinates
     COLORREF c;        // Color to be checked (RGB)
     int fazzy;

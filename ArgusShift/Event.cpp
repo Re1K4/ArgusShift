@@ -38,15 +38,9 @@ bool Event::checkColor(bool debugFlag) {
     return isMatch;
 }
 
-bool Event::checkRGB(bool debugFlag) {
-    COLORREF color = GetPixel(hdc, x, y);
-
-    int red = GetRValue(color);
-    int green = GetGValue(color);
-    int blue = GetBValue(color);
-
-    // Create an OpenCV Mat object
-    cv::Mat rgbPixel(1, 1, CV_8UC3, cv::Scalar(blue, green, red)); // OpenCVÇÕBGRèá
+const char* Event::classifyColor(int red, int green, int blue, int* hueOut, int* saturationOut, int* valueOut) {
+    // Create an OpenCV Mat object (OpenCV uses BGR order)
+    cv::Mat rgbPixel(1, 1, CV_8UC3, cv::Scalar(blue, green, red));
 
     // RGB to HSV conversion
     cv::Mat hsvPixel;
@@ -55,11 +49,32 @@ bool Event::checkRGB(bool debugFlag) {
     // Get HSV value
     cv::Vec3b hsv = hsvPixel.at<cv::Vec3b>(0, 0);
     int hue = hsv[0] * 2;       // Converted to 0-360 degrees since the range is 0-179 in OpenCV
-    int saturation = hsv[1]; // Saturation (0 - 255)
-    int value = hsv[2];     // Value (0 - 255)
-    
-    // Ignore if Saturation is below 40% (102 in 0-255 range) or Value is below 10% (25.5 in 0-255 range)
-    if (saturation <= 102 || value <= 25) {
+    int saturation = hsv[1];    // Saturation (0 - 255)
+    int value = hsv[2];         // Value (0 - 255)
+    if (hueOut) *hueOut = hue;
+    if (saturationOut) *saturationOut = saturation;
+    if (valueOut) *valueOut = value;
+
+    // Achromatic if Saturation is below 40% (102 in 0-255 range) or Value is below 10% (25.5 in 0-255 range)
+    if (saturation <= 102 || value <= 25) return nullptr;
+
+    // Judgment of color system
+    if (hue <= 30 || hue >= 331) return "RED";
+    if (hue <= 50)  return "ORANGE";
+    if (hue <= 70)  return "YELLOW";
+    if (hue <= 160) return "GREEN";
+    if (hue <= 262) return "BLUE";
+    return "PURPLE";
+}
+
+bool Event::checkRGB(bool debugFlag) {
+    COLORREF color = GetPixel(hdc, x, y);
+
+    int hue = 0, saturation = 0, value = 0;
+    const char* category = classifyColor(GetRValue(color), GetGValue(color), GetBValue(color), &hue, &saturation, &value);
+
+    // Ignore achromatic pixels (low S or V)
+    if (!category) {
         if (debugFlag) {
             std::ostringstream oss;
             oss << "Ignoring due to low S or V: S [" << saturation << "] V [" << value << "] at xy(" << x << "," << y << ")";
@@ -68,26 +83,7 @@ bool Event::checkRGB(bool debugFlag) {
         return false;
     }
 
-    // Judgment of color system
-    bool result = false;
-    if (colorType == "RED") {
-        result = (hue >= 0 && hue <= 30) || (hue >= 331 && hue <= 360);
-    }
-    if (colorType == "ORANGE") {
-        result = (hue >= 31 && hue <= 50);
-    }
-    if (colorType == "YELLOW") {
-        result = (hue >= 51 && hue <= 70);
-    }
-    if (colorType == "GREEN") {
-        result = (hue >= 71 && hue <= 160);
-    }
-    if (colorType == "BLUE") {
-        result = (hue >= 161 && hue <= 262);
-    }
-    if (colorType == "PURPLE") {
-        result = (hue >= 263 && hue <= 330);
-    }
+    bool result = colorType == category;
 
     if (debugFlag) {
         // Output debugging information

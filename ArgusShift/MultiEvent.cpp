@@ -113,17 +113,11 @@ bool MultiEvent::checkRGBMulti(MatchMode mode, bool debugFlag) {
         int y = e->y;
         std::string type = e->colorType;
 
-        cv::Vec3b pixel = getPixelFromCapture(x, y);
-        cv::Mat bgr(1, 1, CV_8UC3, pixel);
-        cv::Mat hsv;
-        cv::cvtColor(bgr, hsv, cv::COLOR_BGR2HSV);
+        cv::Vec3b pixel = getPixelFromCapture(x, y);   // BGR
+        int hue = 0, sat = 0, val = 0;
+        const char* category = Event::classifyColor(pixel[2], pixel[1], pixel[0], &hue, &sat, &val);
 
-        cv::Vec3b hsvVal = hsv.at<cv::Vec3b>(0, 0);
-        int hue = hsvVal[0] * 2;
-        int sat = hsvVal[1];
-        int val = hsvVal[2];
-
-        if (sat <= 102 || val <= 25) {
+        if (!category) {
             if (debugFlag) {
                 std::ostringstream oss;
                 oss << "Ignoring due to low S or V: S [" << sat << "] V [" << val << "] at xy(" << x << "," << y << ")";
@@ -138,13 +132,7 @@ bool MultiEvent::checkRGBMulti(MatchMode mode, bool debugFlag) {
             }
         }
 
-        bool match = false;
-        if (type == "RED")    match = (hue >= 0 && hue <= 30) || (hue >= 331 && hue <= 360);
-        if (type == "ORANGE") match = (hue >= 31 && hue <= 50);
-        if (type == "YELLOW") match = (hue >= 51 && hue <= 70);
-        if (type == "GREEN")  match = (hue >= 71 && hue <= 160);
-        if (type == "BLUE")   match = (hue >= 161 && hue <= 262);
-        if (type == "PURPLE") match = (hue >= 263 && hue <= 330);
+        bool match = type == category;
 
         if (debugFlag) {
             std::ostringstream oss;

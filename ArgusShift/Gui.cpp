@@ -206,6 +206,8 @@ namespace {
         void loadForm(int page);
         void saveForm(int page);
         void updatePreview();
+        void autoSetColorType();
+        void updateColorTypeHint();
         void updateStepFieldStates();
         void fillNextCombo(HWND combo, int value);
         void fillTimerCombo(HWND combo, int value);
@@ -269,7 +271,7 @@ namespace {
         std::vector<HWND> formCtrls[PAGE_COUNT];
 
         // Event form
-        HWND evName{}, evX{}, evY{}, evR{}, evG{}, evB{}, evFuzzy{}, evType{}, evPreview{};
+        HWND evName{}, evX{}, evY{}, evR{}, evG{}, evB{}, evFuzzy{}, evType{}, evTypeHint{}, evPreview{};
         HBRUSH previewBrush = nullptr;
         // Timer form
         HWND tmName{}, tmSec{};
@@ -535,7 +537,7 @@ namespace {
         label({ L"Fuzzy", L"許容誤差" }, LX, 186, LW, P);        evFuzzy = edit(EV_FUZZY, X, 186, 80, P);
         label({ L"tolerance per channel (0-255)", L"チャンネルごとの許容差 (0-255)" }, X + 90, 186, 250, P);
         label({ L"Color type", L"色の種別" }, LX, 212, LW, P);   evType = combo(EV_TYPE, X, 212, 120, P);
-        label({ L"used by 'Point RGB type'", L"「認識点RGB種別」で使用" }, X + 130, 212, 250, P);
+        evTypeHint = add(L"STATIC", L"", SS_LEFT, X + 130, 214, 275, 32, -1, P);   // 2 lines, set by updateColorTypeHint
         for (int i = 0; i < COLOR_TYPE_COUNT; ++i) SendMessageW(evType, CB_ADDSTRING, 0, (LPARAM)COLOR_TYPES[i]);
         label({ L"Color", L"色" }, LX, 244, LW, P);
         evPreview = add(L"STATIC", L"", WS_BORDER, X, 244, 80, 36, EV_PREVIEW, P);
@@ -555,7 +557,7 @@ namespace {
             L"1つのステップで2つ以上の認識点を選択すると、ALL / ANY 判定を行います。\r\n"
             L"画面から取得: F1キーで画面を静止キャプチャして選択できます "
             L"(ルーペ表示、矢印キーで1ピクセル移動、Enter / クリックで確定)。" };
-        bindText(add(L"STATIC", help.get(), SS_LEFT, LX, 372, 500, 80, -1, P), help);
+        bindText(add(L"STATIC", help.get(), SS_LEFT, LX, 366, 520, 148, -1, P), help);   // fills the gap down to the log label (y=518)
     }
 
     void App::createTimerForm() {
@@ -857,6 +859,33 @@ namespace {
         if (previewBrush) DeleteObject(previewBrush);
         previewBrush = CreateSolidBrush(RGB(getInt(evR) & 0xFF, getInt(evG) & 0xFF, getInt(evB) & 0xFF));
         InvalidateRect(evPreview, nullptr, TRUE);
+        updateColorTypeHint();
+    }
+
+    // The hue category follows from the RGB, so picking / editing the color selects it.
+    // The combo stays editable to watch for a different color than the one picked;
+    // achromatic colors (no hue) leave the current selection as is.
+    void App::autoSetColorType() {
+        const char* cat = Event::classifyColor(getInt(evR) & 0xFF, getInt(evG) & 0xFF, getInt(evB) & 0xFF);
+        if (!cat) return;
+        for (int i = 0; i < COLOR_TYPE_COUNT; ++i)
+            if (fromAnsi(cat) == COLOR_TYPES[i]) SendMessageW(evType, CB_SETCURSEL, i, 0);
+    }
+
+    void App::updateColorTypeHint() {
+        if (selected(PAGE_EVENTS) < 0) { SetWindowTextW(evTypeHint, L""); return; }
+        const char* cat = Event::classifyColor(getInt(evR) & 0xFF, getInt(evG) & 0xFF, getInt(evB) & 0xFF);
+        int sel = (int)SendMessageW(evType, CB_GETCURSEL, 0, 0);
+        std::wstring hint;
+        if (!cat)
+            hint = Lang::tr(L"Achromatic RGB: 'Point RGB type' ignores gray / white / black",
+                            L"無彩色のため「認識点RGB種別」では判定されません");
+        else if (sel >= 0 && fromAnsi(cat) == COLOR_TYPES[sel])
+            hint = Lang::tr(L"Auto from RGB (used by 'Point RGB type')",
+                            L"RGBから自動設定 (「認識点RGB種別」で使用)");
+        else
+            hint = std::wstring(Lang::tr(L"Manual: the RGB above is ", L"手動指定: 上のRGBは ")) + fromAnsi(cat);
+        SetWindowTextW(evTypeHint, hint.c_str());
     }
 
     // Enable only the fields that matter for the chosen condition / action
@@ -1540,6 +1569,7 @@ namespace {
             }
             bool change = code == EN_CHANGE || code == CBN_SELCHANGE || code == BN_CLICKED || code == LBN_SELCHANGE;
             if (change && !loadingForm) {
+                if ((id == EV_R || id == EV_G || id == EV_B) && code == EN_CHANGE) autoSetColorType();
                 if (id >= EV_NAME && id < EV_PREVIEW) saveForm(PAGE_EVENTS);
                 else if (id >= TM_NAME && id < 500) saveForm(PAGE_TIMERS);
                 else if (id >= ST_NAME && id < ST_TBROWSE) saveForm(PAGE_STEPS);
